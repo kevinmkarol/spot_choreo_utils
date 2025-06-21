@@ -10,14 +10,23 @@ Animations created with this tool are saved in: `choreo_files/active/`
 
 - Docker installed on your system
 - Two terminal windows
+- Git submodules initialized
 
 ## Steps to Run
 
+### 0. Initialize Git Submodules
+
+From the git repo root:
+```bash
+git submodule init
+git submodule update
+```
+
 ### 1. Start Docker Container
 
-In your first terminal:
+In your first terminal (from the git repo root):
 ```bash
-cd spot_choreo_utils/docker
+cd docker
 python start_docker.py
 ```
 
@@ -50,7 +59,7 @@ The frontend will start on port 3000.
 
 In the second terminal (inside Docker):
 ```bash
-cd /workspaces/spot_choreo_utils/spot_choreo_utils/web_animato/spot_web_animator
+cd /workspaces/spot_choreo_utils/spot_choreo_utils/web_animator/spot_web_animator
 python animate.py
 ```
 
