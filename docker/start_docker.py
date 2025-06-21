@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Boston Dynamics AI Institute LLC. All rights reserved.
 
 import os
+import platform
+import socket
 import subprocess
 from argparse import ArgumentParser
 from pathlib import Path
@@ -11,6 +13,35 @@ def get_repo_root() -> Path:
     return Path(__file__).parent.parent.resolve()
 
 
+def is_port_available(port: int) -> bool:
+    """Check if a port is available for binding"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('', port))
+            return True
+    except OSError:
+        return False
+
+
+def get_available_port(preferred_port: int, port_name: str) -> int:
+    """Get an available port, trying the preferred port first"""
+    if is_port_available(preferred_port):
+        return preferred_port
+    
+    # Try alternative ports
+    alt_port = preferred_port + 10000  # Try 10000 higher
+    if is_port_available(alt_port):
+        print(f"Warning: Port {preferred_port} is in use for {port_name}. Using {alt_port} instead.")
+        return alt_port
+    
+    # Find any available port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        port = s.getsockname()[1]
+        print(f"Warning: Port {preferred_port} is in use for {port_name}. Using {port} instead.")
+        return port
+
+
 def build_image(image_name: str) -> None:
     """Build the repo dockerfile"""
     subprocess.run(
@@ -18,27 +49,62 @@ def build_image(image_name: str) -> None:
     )
 
 
-def start_container(image_name: str, container_name: str) -> None:
+def start_container(image_name: str, container_name: str, detached: bool = False) -> None:
     """Start the repo dockerfile with the code mounted as a volume"""
     repo_root = get_repo_root()
+    system = platform.system()
 
-    # Specfiy run the image interactively
-    run_args = ["docker", "run", "-it"]
+    # Specify run mode
+    if detached:
+        run_args = ["docker", "run", "-d"]
+    else:
+        run_args = ["docker", "run", "-it"]
     # Set the conatiner name
     run_args += ["--name", container_name]
-    # Share the network host so browser can interact with localhost servers inside docker
-    run_args += ["--net=host"]
+    
+    # Platform-specific network configuration
+    if system == "Linux":
+        # Share the network host so browser can interact with localhost servers inside docker
+        run_args += ["--net=host"]
+    elif system == "Darwin":
+        # macOS doesn't support --net=host, use port mapping instead
+        # Check and map available ports
+        jupyter_port = get_available_port(8888, "Jupyter")
+        meshcat_port = get_available_port(7000, "Meshcat")
+        frontend_port = get_available_port(3000, "Frontend")
+        fastapi_port = get_available_port(8000, "FastAPI")
+        
+        # Port mappings
+        run_args += ["-p", f"{jupyter_port}:8888"]
+        run_args += ["-p", f"{meshcat_port}:7000"]
+        run_args += ["-p", f"{frontend_port}:3000"]
+        run_args += ["-p", f"{fastapi_port}:8000"]
+        
+        print("\nPort mappings for macOS:")
+        print(f"  Jupyter notebook: http://localhost:{jupyter_port}")
+        print(f"  Meshcat: http://localhost:{meshcat_port}")
+        print(f"  Frontend: http://localhost:{frontend_port}")
+        print(f"  FastAPI: http://localhost:{fastapi_port}\n")
+    
     # Match current user permissions to user inside docker container
     run_args += ["-e", f"UID={os.getuid()}"]
     run_args += ["-e", f"GID={os.getgid()}"]
-    run_args += ["--device", "/dev/snd"]
-
-    # Mount the PulseAudio socket for audio forwarding
-    run_args += ["-v", f"/run/user/{os.getuid()}/pulse/native:/run/pulse/native"]
-    # Set environment variable for PulseAudio server inside container
-    run_args += ["-e", "PULSE_SERVER=unix:/run/pulse/native"]
-    # Optionally, set the SDL audio driver to use PulseAudio
-    run_args += ["-e", "SDL_AUDIODRIVER=pulse"]
+    
+    # Platform-specific audio configuration
+    if system == "Linux":
+        # Linux audio device and PulseAudio configuration
+        run_args += ["--device", "/dev/snd"]
+        # Mount the PulseAudio socket for audio forwarding
+        run_args += ["-v", f"/run/user/{os.getuid()}/pulse/native:/run/pulse/native"]
+        # Set environment variable for PulseAudio server inside container
+        run_args += ["-e", "PULSE_SERVER=unix:/run/pulse/native"]
+        # Optionally, set the SDL audio driver to use PulseAudio
+        run_args += ["-e", "SDL_AUDIODRIVER=pulse"]
+    elif system == "Darwin":
+        # macOS doesn't have /dev/snd, skip audio device mounting
+        print("Note: Audio device passthrough is not supported on macOS")
+    else:
+        print(f"Warning: Unknown platform {system}, skipping audio configuration")
 
     # Set the working directory
     run_args += ["-w", "/workspaces/spot_choreo_utils"]
@@ -80,8 +146,11 @@ def check_for_container_running(container_name: str) -> bool:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        check=True,
+        check=False,
     )
+
+    if query_res.returncode != 0:
+        return False
 
     return container_name in query_res.stdout.strip()
 

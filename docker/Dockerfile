@@ -1,12 +1,13 @@
 # Copyright (c) 2025 Boston Dynamics AI Institute LLC. All rights reserved.
-FROM ubuntu:22.04
+
+# Use Drake's official Docker image as base (with emulation on Apple Silicon)
+FROM --platform=linux/amd64 robotlocomotion/drake:1.24.0
 
 USER root
-
-
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 
-# Setup python and notebooks
+# Common setup for both architectures
 RUN apt-get update && apt-get install -y --no-install-recommends \
   python-is-python3 \
   python3-pip \ 
@@ -16,7 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   git \ 
   curl \
   gnupg2 \
-  lsb-release
+  lsb-release \
+  ca-certificates
+
+# Install Node.js and npm
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs
 
 # Install ROS2 and Colcon
 RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | apt-key add -
@@ -28,8 +34,12 @@ RUN apt-get update && apt-get install -y \
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
 ENV SETUP_DIR="/setup"
-RUN mkdir /workspaces
-RUN mkdir $SETUP_DIR
+RUN mkdir -p /workspaces
+RUN mkdir -p $SETUP_DIR
+
+# Drake is already installed in the base image
+# Set Drake environment variables (already configured in base image, but ensuring they're set)
+ENV DRAKE_INSTALL_DIR=/opt/drake
 
 # Python deps
 COPY requirements.txt $SETUP_DIR/requirements.txt

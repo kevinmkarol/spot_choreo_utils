@@ -26,7 +26,47 @@ This repository uses git submodules and Docker to manage dependencies. The easie
 
 This will download all external dependency repositories, build a docker image and start a new container with all dependencies installed. The repository is passed into the docker image as a volume so that changes will automatically pass through and persist on disk.
 
+The Docker image includes:
+- Python 3.10 with pip
+- ROS2 Humble
+- Node.js 18.x and npm (for frontend development)
+- Drake robotics library (x86_64 only)
+- All Python dependencies from requirements.txt
+
 For a full dependencies list see the Dockerfile and entrypoint scripts.
+
+## macOS-Specific Setup
+On macOS, Docker networking works differently than Linux. The script automatically:
+- Detects unavailable ports and uses alternatives
+- Maps container ports to host ports (instead of using --net=host)
+- Skips audio device mounting (not available on macOS)
+
+### Port Mappings
+The following services are exposed with automatic port conflict resolution:
+- Jupyter Notebook: http://localhost:8888 (or alternative if in use)
+- Web Animator: http://localhost:7000 (may use 17000 if 7000 is occupied)
+- Frontend Dev Server: http://localhost:3000
+- FastAPI Backend: http://localhost:8000
+
+### Starting Jupyter Notebook on macOS
+After entering the Docker container, manually start Jupyter:
+```bash
+# Inside the container
+cd /workspaces/spot_choreo_utils
+jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+```
+Then access Jupyter at the URL shown in the terminal output.
+
+### Known macOS Limitations
+- Audio passthrough is not supported on macOS Docker
+- ARM64 builds take significantly longer due to building Drake from source (30-60 minutes)
+
+### Drake Installation Notes
+- **x86_64 (Intel Macs)**: Uses pre-built Drake v1.24.0 binary (installed during Docker build)
+- **ARM64 (Apple Silicon)**: Builds Drake v1.24.0 from source on first container start (30-60 minutes)
+- Both architectures result in fully functional Drake installations
+- ARM64 builds include progress monitoring: `docker exec -it spot_choreo_utils tail -f /tmp/drake_build.log`
+- Check Drake status anytime: `./check_drake_build.sh` (inside container)
 
 ## Setting up the Web Animator
 The Web Animator provides a way to create pose-to-pose animations through the web browser.
@@ -38,17 +78,36 @@ The Web Animator provides a way to create pose-to-pose animations through the we
 You can explore potential choreographic poses and export them for testing on the robot through the Web Animator. The Web Animator does its best to guarantee stability and on robot validity when all feet are locked on the ground, but once feet are unlocked there is a much heavier burden placed on the choreographer to think about stability and comply with choreographer protobuf requirements.
 
 To start animating:
-  - cd spot_choreo_utils/web_animator/spot_web_animator
-  - python animate.py
-  - Type an animation name into the terminal 
-  - Open a seperate tab to localhost:7000 for web visualizer
+1. Start the backend server:
+   ```bash
+   cd spot_choreo_utils/web_animator/spot_web_animator
+   python animate.py
+   # Type an animation name when prompted
+   ```
 
-  - # start frontend:
-    - cd frontend
-    - npm install
-    - npm start
+2. Start the frontend (in a separate terminal):
+   ```bash
+   cd spot_choreo_utils/frontend
+   npm install  # First time only
+   npm start
+   ```
+
+3. Access the web interface:
+   - Frontend: http://localhost:3000 (or the port shown in Docker output)
+   - Backend visualizer: http://localhost:7000 (or alternative port if 7000 is in use)
 
 Use the animation sliders to set robot poses, and then use the Save Pose As Keyframe button to add the pose to an animation. The animation you create will be saved to the active directory under choreo_files.
+
+### Frontend Development
+The frontend is a React application that provides the web interface for the animator.
+
+#### Available Scripts
+- `npm start` - Runs the development server
+- `npm build` - Creates a production build
+- `npm test` - Runs the test suite
+
+#### Node.js 18 Compatibility Note
+The frontend uses react-scripts v3.0.1 which has compatibility issues with Node.js 18's OpenSSL 3.0. The package.json has been configured to use the legacy OpenSSL provider (`NODE_OPTIONS=--openssl-legacy-provider`) as a workaround.
 
 # Contributing to this repo
 This repository enforces `ruff` and `black` linting. To verify that your code will pass inspection, install `pre-commit` and run:
@@ -67,3 +126,35 @@ The spot_choreo_utils library uses pytest for unit testing. Prior to submitting 
 If you change the proto definitions, re-generate the pb2.py definitions with: 
 - cd spot_choreo_utils/spot_choreo_utils/protos
 - python regenerate_protos.py
+
+## Troubleshooting
+
+### Common macOS Issues
+
+#### Port Already in Use
+If you see "bind: address already in use" errors:
+- The script automatically finds alternative ports
+- Check the console output for the actual ports being used
+- Common conflicts: Port 7000 (used by Control Center on macOS)
+
+#### Drake Build Issues on ARM64
+- **First Startup Delay**: Drake builds from source on Apple Silicon during first container start (30-60 minutes)
+- **Build Monitoring**: Monitor progress with `docker exec -it spot_choreo_utils tail -f /tmp/drake_build.log`
+- **Build Failures**: Ensure Docker has sufficient resources (8GB+ RAM, 20GB+ disk space)
+- **Build Timeout**: Builds timeout after 90 minutes - restart container to retry if needed
+
+#### Container Won't Start Interactively
+If you get "the input device is not a TTY" errors:
+- Make sure you're running the command in a real terminal (not through scripts)
+- Try: `docker exec -it spot_choreo_utils bash` after the container is running
+
+#### Jupyter Notebook Not Accessible
+- Ensure you start Jupyter with `--ip=0.0.0.0` flag
+- Check that the port mapping is correct in `docker ps`
+- Try accessing via the token URL shown in Jupyter output
+
+#### Frontend npm start OpenSSL Error
+If you see "Error: error:0308010C:digital envelope routines::unsupported":
+- This is due to react-scripts v3.0.1 incompatibility with Node.js 18
+- The package.json has been updated with NODE_OPTIONS=--openssl-legacy-provider
+- Run `npm start` normally - the workaround is already applied
