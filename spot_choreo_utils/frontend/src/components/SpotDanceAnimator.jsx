@@ -92,7 +92,7 @@ const WebSocketStatus = ({ apiClient, lastUpdate }) => {
 const SpotDanceAnimator = () => {
   const apiClient = useRef(new SpotAnimatorClient('http://localhost:8000'));
 
-  const [meshcatUrl, setMeshcatUrl] = useState('http://localhost:7000');
+  const [meshcatUrl, setMeshcatUrl] = useState('http://localhost:17000');
   const [lastWebSocketUpdate, setLastWebSocketUpdate] = useState(null);
   
   // State for animation data
@@ -178,7 +178,8 @@ useEffect(() => {
         } else if (message.type === 'meshcat_url') {
           // Update Meshcat URL when received from server
           console.log(`Setting Meshcat URL to: ${message.url}`);
-          setMeshcatUrl(message.url);
+          // This is a better long term solution, but with mac have to hard code the port
+          //setMeshcatUrl(message.url);
         } else if (message.type === 'play_animation') {
           setIsPlaying(true);
         } else if (message.type === 'stop_animation') {

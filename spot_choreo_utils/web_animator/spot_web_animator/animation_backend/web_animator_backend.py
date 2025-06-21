@@ -815,7 +815,7 @@ def web_animation_loop(with_arm: bool = True) -> None:
     
     # Use the standard Meshcat constructor with server parameters
     meshcat = Meshcat()
-    meshcat_url = "http://localhost:7000" 
+    meshcat_url = "http://localhost:17000" 
     
     try:
         if hasattr(meshcat, "web_url"):
